@@ -1,0 +1,87 @@
+<?php
+
+namespace App\Services;
+
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+use Carbon\Carbon;
+use SellingPartnerApi\SellingPartnerApi;
+use SellingPartnerApi\Enums\Endpoint;
+use DateTime;
+
+class AmazonSPApiService
+{
+    private $accessKeyId;
+    private $secretAccessKey;
+    private $refreshToken;
+    private $clientId;
+    private $clientSecret;
+    private $sellerId;
+    private $sel;
+    
+    public function __construct()
+    {
+        $this->accessKeyId = env('AMAZON_SP_API_ACCESS_KEY_ID');
+        $this->secretAccessKey = env('AMAZON_SP_API_SECRET_ACCESS_KEY');
+        $this->refreshToken = env('AMAZON_SP_API_REFRESH_TOKEN');
+        $this->clientId = env('AMAZON_SP_API_CLIENT_ID');
+        $this->clientSecret = env('AMAZON_SP_API_CLIENT_SECRET');
+        $this->sellerId = env('AMAZON_SP_API_SELLER_ID');
+        
+      
+    }
+
+    private function getAccessToken()
+    {
+          $this->sel= new SellingPartnerApi(env('AMAZON_SP_API_CLIENT_ID'),
+    env('AMAZON_SP_API_CLIENT_SECRET'),
+    env('AMAZON_SP_API_REFRESH_TOKEN'),
+    Endpoint::NA);
+        $connector = $this->sel->seller();
+        $ordersApi = $connector->catalogItemsV0();
+//$response = $ordersApi->listCatalogItems('ATVPDKIKX0DER');
+//dd($connector);// asin B0D2D45P6N
+        $url = 'https://api.amazon.com/auth/o2/token';
+        $response = Http::asForm()->post($url, [
+            'grant_type' => 'refresh_token',
+            'refresh_token' => $this->refreshToken,
+            'client_id' => $this->clientId,
+            'client_secret' => $this->clientSecret,
+        ]);
+
+        $data = $response->json();
+ 
+        return $data['access_token'];
+    }
+
+    private function makeApiRequest($endpoint, $method = 'GET', $params = [])
+    {
+        $token = $this->getAccessToken();
+        $url = "https://sellingpartnerapi-na.amazon.com$endpoint";
+  dd($token);
+        try {
+            $response = Http::withHeaders([
+                'Authorization' => "Bearer $token",
+                'x-amz-access-token' => $token,
+                'x-amz-date' => Carbon::now()->format('Ymd\THis\Z'),
+            ])->$method($url, $params);
+dd($response->json());
+            return $response->json();
+        } catch (\Exception $e) {
+            Log::error('Error making SP API request: ' . $e->getMessage());
+            return null;
+        }
+    }
+
+    public function getProducts()
+    {
+        $endpoint = '/catalog/v0/items'; // Example endpoint for catalog
+        $params = [
+            'asin' => 'B07JGTVTWN', // Example ASIN, replace with your own
+            'marketplaceId' => 'ATVPDKIKX0DER', // Example marketplace ID
+        ];
+        return $this->makeApiRequest($endpoint, 'GET', $params);
+    }
+
+    // Add more methods to interact with other SP API endpoints
+}
